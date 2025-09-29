@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anomaly Detection System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Dashboard Container -->
+    <div class="dashboard-container">
+        <!-- Title -->
+        <h1 class="dashboard-title">Anomaly Detection System</h1>
+        
+        <!-- Flash Cards Container -->
+        <div class="cards-container">
+            <!-- Temperature Card -->
+            <div class="flash-card" id="temp-card">
+                <div class="card-icon">🌡️</div>
+                <div class="card-title">Temperature (°C)</div>
+                <div class="card-value" id="temp-value">Waiting for data...</div>
+            </div>
+            
+            <!-- CO2 Card -->
+            <div class="flash-card" id="co2-card">
+                <div class="card-icon">💨</div>
+                <div class="card-title">CO₂ (ppm)</div>
+                <div class="card-value" id="co2-value">Waiting for data...</div>
+            </div>
+            
+            <!-- Humidity Card -->
+            <div class="flash-card" id="humidity-card">
+                <div class="card-icon">💧</div>
+                <div class="card-title">Humidity (%)</div>
+                <div class="card-value" id="humidity-value">Waiting for data...</div>
+            </div>
+        </div>
+        
+        <!-- Alert Box -->
+        <div class="alert-box" id="alert-box">
+            <span class="alert-icon">⚠</span>
+            <span class="alert-text">Alert Window (will activate if anomaly is detected)</span>
+        </div>
+        
+        <!-- History Box -->
+        <div class="history-box">
+            <div class="history-header">
+                <h2 class="history-title">Historical Data</h2>
+            </div>
+            <div class="history-controls">
+                <input type="datetime-local" id="datetime-picker" class="datetime-input">
+                <button id="fetch-history-btn" class="fetch-button">Fetch History</button>
+            </div>
+            <div class="history-content" id="history-content">
+                Select a date and time to view history.
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
