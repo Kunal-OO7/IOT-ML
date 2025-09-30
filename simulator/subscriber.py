@@ -8,13 +8,13 @@ topic = "iot/sensor"
 
 # Callback when connection is successful
 def on_connect(client, userdata, flags, rc):
-    print("✅ Connected to broker with result code", rc)
+    print("Connected to broker with result code", rc)
     client.subscribe(topic)
 
 # Callback when a message is received
 def on_message(client, userdata, msg):
     data = json.loads(msg.payload.decode())
-    print(f"📥 Received -> Temperature: {data['temperature']}°C | "
+    print(f"Received -> Temperature: {data['temperature']}°C | "
           f"Humidity: {data['humidity']}% | "
           f"CO₂: {data['co2']} ppm")
 
