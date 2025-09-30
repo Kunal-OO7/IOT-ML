@@ -1,31 +1,33 @@
-import paho.mqtt.client as mqtt
 import time
 import random
 import json
+import paho.mqtt.client as mqtt
 
-# MQTT broker details
-BROKER = "localhost"   # or your broker IP
-PORT = 1883
-TOPIC = "iot/sensors"
+# MQTT settings
+broker = "localhost"   # Replace with your broker IP if not local
+port = 1883
+topic = "iot/sensor"
 
+# MQTT client
 client = mqtt.Client()
+client.connect(broker, port)
 
-def connect_mqtt():
-    client.connect(BROKER, PORT, 60)
-    print("Connected to MQTT Broker!")
+# Keep generating and publishing data
+while True:
+    # Simulated sensor values
+    temperature = round(random.uniform(20, 35), 1)
+    humidity = round(random.uniform(30, 70), 1)
+    co2 = round(random.uniform(300, 1200), 1)
 
-def publish_data():
-    while True:
-        data = {
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "temperature": round(random.uniform(20.0, 35.0), 2),
-            "humidity": round(random.uniform(30.0, 80.0), 2),
-            "co2": round(random.uniform(300, 1200), 2)
-        }
-        client.publish(TOPIC, json.dumps(data))
-        print(f"Published: {data}")
-        time.sleep(3)  # send every 3 sec
+    # Package as JSON
+    data = {
+        "temperature": temperature,
+        "humidity": humidity,
+        "co2": co2
+    }
 
-if __name__ == "__main__":
-    connect_mqtt()
-    publish_data()
+    # Publish to MQTT
+    client.publish(topic, json.dumps(data))
+
+    # Wait 1 second before next reading
+    time.sleep(1)
