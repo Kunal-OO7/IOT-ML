@@ -1,25 +1,32 @@
-from flask import Flask, jsonify
-import numpy as np
+import os
 import threading
 import time
+import joblib
+import numpy as np
 from datetime import datetime, timezone
+from dotenv import load_dotenv
+from flask import Flask, jsonify, send_file
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
+load_dotenv()
+
 app = Flask(__name__)
 
-# ─── InfluxDB config ───────────────────────────────────────────────────────────
-INFLUX_URL    = "http://localhost:8086"
-INFLUX_TOKEN  = "ayUawvpInUeNmrvpZ9tCdyftTpfYUQCnkHuPdSLtY0Y9BDqP-1xp_v4rEhqXU5FRRFUVsELlJCBXJhD5zDCR7Q=="
-INFLUX_ORG    = "IOT_PROJECT"
-INFLUX_BUCKET = "iot_sensors"
+# ─── InfluxDB config (from .env) ───────────────────────────────────────────────
+INFLUX_URL    = os.getenv("INFLUX_URL",    "http://localhost:8086")
+INFLUX_TOKEN  = os.getenv("INFLUX_TOKEN",  "")
+INFLUX_ORG    = os.getenv("INFLUX_ORG",    "")
+INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "iot_sensors")
 
 # ─── Model config ──────────────────────────────────────────────────────────────
 RETRAIN_INTERVAL = 300
 MIN_SAMPLES      = 50
 CONTAMINATION    = 0.07
+MODEL_PATH       = "model.pkl"
+SCALER_PATH      = "scaler.pkl"
 
 # ─── InfluxDB clients ──────────────────────────────────────────────────────────
 influx_client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
@@ -33,6 +40,20 @@ model_lock   = threading.Lock()
 last_trained = None
 sample_count = 0
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Severity helper
+# ──────────────────────────────────────────────────────────────────────────────
+
+def get_severity(score: float) -> str:
+    if score < -0.6:   return "CRITICAL"
+    elif score < -0.4: return "HIGH"
+    else:              return "LOW"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Data fetching
+# ──────────────────────────────────────────────────────────────────────────────
 
 def fetch_training_data(window_minutes=60):
     query = f"""
@@ -76,6 +97,26 @@ def fetch_latest_readings(n=5):
     return rows
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Model training + persistence
+# ──────────────────────────────────────────────────────────────────────────────
+
+def save_model():
+    joblib.dump(model,  MODEL_PATH)
+    joblib.dump(scaler, SCALER_PATH)
+    print("[MODEL] Saved to disk.")
+
+
+def load_model_from_disk():
+    global model, scaler
+    if os.path.exists(MODEL_PATH) and os.path.exists(SCALER_PATH):
+        model  = joblib.load(MODEL_PATH)
+        scaler = joblib.load(SCALER_PATH)
+        print("[MODEL] Loaded from disk.")
+        return True
+    return False
+
+
 def train_model():
     global model, scaler, last_trained, sample_count
     print("[MODEL] Fetching training data from InfluxDB...")
@@ -98,22 +139,41 @@ def train_model():
         model.fit(data_scaled)
         last_trained = datetime.now(timezone.utc)
         sample_count = len(data)
+        save_model()
     print(f"[MODEL] Trained on {sample_count} samples at {last_trained.strftime('%H:%M:%S')}")
     return True
 
 
+last_sample_count = 0
+
 def retrain_loop():
+    global last_sample_count
     while True:
         try:
-            train_model()
+            data = fetch_training_data(window_minutes=9999)
+            current_count = len(data)
+
+            # Only retrain if we have new data since last train
+            if current_count > last_sample_count and current_count >= MIN_SAMPLES:
+                print(f"[MODEL] New data detected ({last_sample_count} → {current_count}), retraining...")
+                train_model()
+                last_sample_count = current_count
+            else:
+                print(f"[MODEL] No new data ({current_count} samples). Skipping retrain.")
+
         except Exception as e:
             print(f"[MODEL] Retrain error: {e}")
         time.sleep(RETRAIN_INTERVAL)
 
 
-def log_anomaly(temp, humidity, co2, score, timestamp):
+# ──────────────────────────────────────────────────────────────────────────────
+# Anomaly logging
+# ──────────────────────────────────────────────────────────────────────────────
+
+def log_anomaly(temp, humidity, co2, score, severity, timestamp):
     point = (
         Point("anomalies")
+        .tag("severity",      severity)
         .field("temperature",   float(temp))
         .field("humidity",      float(humidity))
         .field("co2",           float(co2))
@@ -122,6 +182,10 @@ def log_anomaly(temp, humidity, co2, score, timestamp):
     )
     write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Routes
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -179,22 +243,30 @@ def detect():
         if not readings:
             return jsonify({"anomalies": [], "checked_at": datetime.now(timezone.utc).isoformat()})
 
+        seen_timestamps = set()
         for X, ts, temp, humidity, co2 in readings:
+            ts_key = ts.isoformat()
+            if ts_key in seen_timestamps:
+                continue
+            seen_timestamps.add(ts_key)
+
             X_scaled   = scaler.transform(X)
             prediction = model.predict(X_scaled)
             score      = model.score_samples(X_scaled)[0]
 
             if prediction[0] == -1:
-                anomaly = {
+                severity = get_severity(score)
+                anomaly  = {
                     "temperature":   temp,
                     "humidity":      humidity,
                     "co2":           co2,
                     "anomaly_score": round(float(score), 4),
-                    "timestamp":     ts.isoformat(),
+                    "severity":      severity,
+                    "timestamp":     ts_key,
                 }
                 anomalies.append(anomaly)
-                log_anomaly(temp, humidity, co2, score, ts)
-                print(f"[ANOMALY] score={score:.4f} | Temp={temp} Hum={humidity} CO2={co2}")
+                log_anomaly(temp, humidity, co2, score, severity, ts)
+                print(f"[ANOMALY] [{severity}] score={score:.4f} | Temp={temp} Hum={humidity} CO2={co2}")
 
     return jsonify({
         "anomalies":  anomalies,
@@ -236,11 +308,15 @@ def anomaly_history():
                 "humidity":      rec.values.get("humidity"),
                 "co2":           rec.values.get("co2"),
                 "anomaly_score": rec.values.get("anomaly_score"),
+                "severity":      rec.values.get("severity"),
             })
     return jsonify(rows)
 
 
 if __name__ == "__main__":
+    # Try loading saved model first before waiting to retrain
+    load_model_from_disk()
+
     t = threading.Thread(target=retrain_loop, daemon=True)
     t.start()
     print("[ML-SERVICE] Starting on http://localhost:5000")
