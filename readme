@@ -1,0 +1,250 @@
+# IOT-ML — IoT Anomaly Detection System
+
+A real-time IoT sensor anomaly detection pipeline using MQTT, InfluxDB, Isolation Forest ML, and a live web dashboard.
+
+---
+
+## Architecture
+
+```
+sim.py ──MQTT──► subscriber.py ──► InfluxDB
+                                       │
+                                   api.py (ML)
+                                   Isolation Forest
+                                       │
+                                  app.js (Backend)
+                                  Express + SSE
+                                       │
+                                  index.html (Dashboard)
+                                  Live Anomaly Detection
+```
+
+---
+
+## Features
+
+- **Real-time sensor simulation** — temperature, humidity, CO₂ over MQTT
+- **Time-series storage** — InfluxDB for all sensor readings and anomaly logs
+- **CSV logging** — every reading appended to sensor_data.csv
+- **ML anomaly detection** — Isolation Forest trained on live InfluxDB data
+- **Auto-retraining** — model retrains every 5 minutes as new data arrives
+- **Model persistence** — trained model saved to disk, loads instantly on restart
+- **Severity levels** — anomalies classified as LOW / HIGH / CRITICAL
+- **Live dashboard** — SSE streaming, real-time gauges, sensor history chart
+- **Anomaly log** — all detected anomalies with timestamp, values, and score
+- **CSV export** — one-click download of sensor history from the dashboard
+- **Environment variables** — secrets stored in .env, never hardcoded
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Sensor Simulation | Python, paho-mqtt |
+| Message Broker | Mosquitto (MQTT) |
+| Time-Series DB | InfluxDB 2.7 |
+| ML Service | Python, Flask, scikit-learn (Isolation Forest) |
+| Backend API | Node.js, Express |
+| Frontend | HTML, CSS, JavaScript, Chart.js |
+
+---
+
+## Project Structure
+
+```
+IOT-ML/
+├── simulator/
+│   ├── sim.py              # Generates fake sensor data over MQTT
+│   ├── subscriber.py       # Receives MQTT data → InfluxDB + CSV
+│   └── sensor_data.csv     # Auto-generated sensor log
+├── ml-service/
+│   └── src/
+│       ├── api.py          # Flask ML service (Isolation Forest)
+│       ├── model.pkl       # Saved trained model (auto-generated)
+│       ├── scaler.pkl      # Saved scaler (auto-generated)
+│       └── req.txt         # Python dependencies
+├── backend/
+│   └── src/
+│       ├── app.js          # Express server + SSE streaming
+│       └── service.js      # ML service API calls
+├── frontend/
+│   └── index.html          # Live dashboard
+├── .env                    # Environment variables (never commit this)
+└── README.md
+```
+
+---
+
+## Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- [InfluxDB 2.7](https://dl.influxdata.com/influxdb/releases/influxdb2-2.7.11-windows.zip)
+- [Mosquitto MQTT Broker](https://mosquitto.org/download/)
+
+---
+
+## Setup & Installation
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Kunal-OO7/IOT-ML.git
+cd IOT-ML
+```
+
+### 2. Configure environment variables
+
+Create a `.env` file in the project root and in `ml-service/src/`:
+
+```env
+INFLUX_URL=http://localhost:8086
+INFLUX_TOKEN=your-influxdb-token
+INFLUX_ORG=your-org-name
+INFLUX_BUCKET=iot_sensors
+```
+
+### 3. Install Python dependencies
+
+```bash
+pip install paho-mqtt influxdb-client flask numpy scikit-learn python-dotenv joblib
+```
+
+### 4. Install Node.js dependencies
+
+```bash
+cd backend
+npm install
+```
+
+### 5. Set up InfluxDB
+
+1. Download and extract InfluxDB 2.7
+2. Run `.\influxd.exe` from the extracted folder
+3. Open `http://localhost:8086`
+4. Create an account, set org name and bucket name as `iot_sensors`
+5. Copy your API token and paste it in `.env`
+
+### 6. Start Mosquitto
+
+```bash
+# Run as administrator
+net start mosquitto
+```
+
+---
+
+## Running the Project
+
+Open **4 separate terminals** and run in this order:
+
+**Terminal 1 — Subscriber**
+```bash
+cd IOT-ML
+python simulator/subscriber.py
+```
+
+**Terminal 2 — ML Service**
+```bash
+cd IOT-ML/ml-service/src
+python api.py
+```
+
+**Terminal 3 — Simulator**
+```bash
+cd IOT-ML
+python simulator/sim.py
+```
+
+**Terminal 4 — Backend**
+```bash
+cd IOT-ML/backend
+node src/app.js
+```
+
+Open `http://localhost:3000` in your browser.
+
+---
+
+## ML Model
+
+The anomaly detection uses **Isolation Forest** from scikit-learn.
+
+| Parameter | Value | Description |
+|---|---|---|
+| `n_estimators` | 100 | Number of trees in the forest |
+| `contamination` | 0.07 | Expected anomaly rate (7%) |
+| `MIN_SAMPLES` | 50 | Minimum records before first training |
+| `RETRAIN_INTERVAL` | 300s | Retrains every 5 minutes if new data exists |
+
+**Severity levels based on anomaly score:**
+
+| Score | Severity |
+|---|---|
+| < -0.6 | CRITICAL |
+| -0.6 to -0.4 | HIGH |
+| > -0.4 | LOW |
+
+The model is saved to `model.pkl` and `scaler.pkl` after every training run. On restart, it loads from disk instantly without needing to retrain.
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/latest` | Latest sensor reading |
+| GET | `/api/history` | Last 5 minutes of readings |
+| GET | `/api/detect` | Run anomaly detection |
+| GET | `/api/anomalies` | Anomaly history (last 1 hour) |
+| GET | `/api/stream` | SSE live stream (updates every 3s) |
+| GET | `/health` | ML service health check |
+| GET | `/model-status` | Model training status |
+
+---
+
+## Dashboard
+
+The live dashboard at `http://localhost:3000` shows:
+
+- **Live gauges** — real-time temperature, humidity, CO₂ with color-coded anomaly states
+- **Sensor history chart** — last 5 minutes of all three sensor readings
+- **Anomaly log** — running list of detected anomalies with severity, values, and score
+- **Export button** — download current sensor history as CSV
+
+---
+
+## Data Flow
+
+```
+Every reading  →  CSV file  +  InfluxDB (sensor_readings measurement)
+Anomaly only   →  InfluxDB (anomalies measurement) + Dashboard alert
+```
+
+---
+
+## Key Numbers
+
+- **~86,400 data points/day** at 1 reading per second
+- **Sub-3 second** alert latency (sensor → dashboard)
+- **6 independent services** running concurrently
+- **4 REST endpoints** + 1 SSE streaming endpoint
+- **3 sensor fields** monitored simultaneously (temp, humidity, CO₂)
+- **10% spike rate** in simulated data
+
+---
+
+## Future Improvements
+
+- [ ] Real hardware integration (ESP32 + DHT22 + MQ-135)
+- [ ] Email/SMS alerts via SendGrid or Twilio
+- [ ] Docker + docker-compose for one-command startup
+- [ ] Grafana dashboard connected to InfluxDB
+- [ ] REST API documentation with Swagger/OpenAPI
+
+---
+
+## Author
+
+**Kunal** — [GitHub](https://github.com/Kunal-OO7)
