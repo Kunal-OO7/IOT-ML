@@ -1,62 +1,515 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anomaly Detection System</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>IoT Sentinel — Anomaly Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:       #080c10;
+    --surface:  #0d1520;
+    --border:   #1a2a3a;
+    --accent:   #00e5ff;
+    --warn:     #ff6b35;
+    --ok:       #00ff88;
+    --dim:      #3a5068;
+    --text:     #c8dce8;
+    --mono:     'Share Tech Mono', monospace;
+    --sans:     'Rajdhani', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Scanline overlay ───────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,229,255,.015) 2px,
+      rgba(0,229,255,.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg, #0a1520 0%, #080c10 100%);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    color: var(--accent);
+    letter-spacing: .12em;
+  }
+  .logo span { color: var(--dim); }
+
+  .status-bar {
+    display: flex; align-items: center; gap: 20px;
+    font-family: var(--mono); font-size: .75rem;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 8px var(--ok);
+    animation: pulse 2s infinite;
+  }
+  .status-dot.offline { background: var(--dim); box-shadow: none; animation: none; }
+
+  #clock { color: var(--dim); }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  main { padding: 28px 32px; display: grid; gap: 24px; }
+
+  /* ── Gauge row ───────────────────────────────────────────── */
+  .gauges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+  .gauge-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 22px 24px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .3s;
+  }
+  .gauge-card.anomaly {
+    border-color: var(--warn);
+    box-shadow: 0 0 20px rgba(255,107,53,.15);
+    animation: flicker .4s ease-in-out;
+  }
+  @keyframes flicker { 0%,100%{opacity:1} 50%{opacity:.85} }
+
+  .gauge-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--accent);
+    transition: background .3s;
+  }
+  .gauge-card.anomaly::before { background: var(--warn); }
+
+  .gauge-label {
+    font-family: var(--mono); font-size: .7rem;
+    color: var(--dim); letter-spacing: .1em;
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+
+  .gauge-value {
+    font-family: var(--mono); font-size: 2.6rem;
+    color: var(--accent); line-height: 1;
+    transition: color .3s;
+  }
+  .gauge-card.anomaly .gauge-value { color: var(--warn); }
+
+  .gauge-unit {
+    font-family: var(--mono); font-size: .8rem;
+    color: var(--dim); margin-left: 4px;
+  }
+
+  .gauge-status {
+    margin-top: 10px;
+    font-family: var(--mono); font-size: .7rem;
+    color: var(--ok);
+  }
+  .gauge-card.anomaly .gauge-status { color: var(--warn); }
+
+  /* ── Chart section ───────────────────────────────────────── */
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .chart-full { grid-column: 1 / -1; }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+  }
+
+  .chart-title {
+    font-family: var(--mono); font-size: .75rem;
+    color: var(--dim); letter-spacing: .1em;
+    text-transform: uppercase; margin-bottom: 16px;
+  }
+
+  .chart-wrap { position: relative; height: 180px; }
+
+  /* ── Alerts panel ────────────────────────────────────────── */
+  .alerts-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+  }
+
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .panel-title {
+    font-family: var(--mono); font-size: .75rem;
+    color: var(--dim); letter-spacing: .1em; text-transform: uppercase;
+  }
+
+  .alert-count {
+    background: var(--warn);
+    color: #000;
+    font-family: var(--mono); font-size: .65rem;
+    padding: 2px 8px; border-radius: 2px;
+    font-weight: bold;
+  }
+
+  .alerts-list {
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 260px; overflow-y: auto;
+  }
+
+  .alert-item {
+    display: grid;
+    grid-template-columns: 130px 90px 80px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    background: rgba(255,107,53,.06);
+    border: 1px solid rgba(255,107,53,.2);
+    border-radius: 3px;
+    font-family: var(--mono); font-size: .72rem;
+    animation: slideIn .3s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:none} }
+
+  .alert-time { color: var(--dim); }
+  .alert-field { color: var(--warn); text-transform: uppercase; }
+  .alert-val   { color: var(--text); }
+  .alert-z     { color: var(--dim); }
+  .alert-z span { color: var(--warn); }
+
+  .no-alerts {
+    font-family: var(--mono); font-size: .75rem;
+    color: var(--dim); text-align: center; padding: 24px;
+  }
+
+  /* ── Corner decoration ───────────────────────────────────── */
+  .corner {
+    position: absolute; width: 12px; height: 12px;
+    border-color: var(--accent); border-style: solid;
+  }
+  .corner.tl { top: 0; left: 0; border-width: 1px 0 0 1px; }
+  .corner.tr { top: 0; right: 0; border-width: 1px 1px 0 0; }
+  .corner.bl { bottom: 0; left: 0; border-width: 0 0 1px 1px; }
+  .corner.br { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
+
+  /* ── Scrollbar ───────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Connection error banner ─────────────────────────────── */
+  #error-banner {
+    display: none;
+    background: rgba(255,107,53,.1);
+    border: 1px solid rgba(255,107,53,.3);
+    color: var(--warn);
+    font-family: var(--mono); font-size: .75rem;
+    padding: 10px 32px;
+    text-align: center;
+  }
+</style>
 </head>
 <body>
-    <!-- Dashboard Container -->
-    <div class="dashboard-container">
-        <!-- Title -->
-        <h1 class="dashboard-title">Anomaly Detection System</h1>
-        
-        <!-- Flash Cards Container -->
-        <div class="cards-container">
-            <!-- Temperature Card -->
-            <div class="flash-card" id="temp-card">
-                <div class="card-icon">🌡️</div>
-                <div class="card-title">Temperature (°C)</div>
-                <div class="card-value" id="temp-value">Waiting for data...</div>
-            </div>
-            
-            <!-- CO2 Card -->
-            <div class="flash-card" id="co2-card">
-                <div class="card-icon">💨</div>
-                <div class="card-title">CO₂ (ppm)</div>
-                <div class="card-value" id="co2-value">Waiting for data...</div>
-            </div>
-            
-            <!-- Humidity Card -->
-            <div class="flash-card" id="humidity-card">
-                <div class="card-icon">💧</div>
-                <div class="card-title">Humidity (%)</div>
-                <div class="card-value" id="humidity-value">Waiting for data...</div>
-            </div>
-        </div>
-        
-        <!-- Alert Box -->
-        <div class="alert-box" id="alert-box">
-            <span class="alert-icon">⚠</span>
-            <span class="alert-text">Alert Window (will activate if anomaly is detected)</span>
-        </div>
-        
-        <!-- History Box -->
-        <div class="history-box">
-            <div class="history-header">
-                <h2 class="history-title">Historical Data</h2>
-            </div>
-            <div class="history-controls">
-                <input type="datetime-local" id="datetime-picker" class="datetime-input">
-                <button id="fetch-history-btn" class="fetch-button">Fetch History</button>
-            </div>
-            <div class="history-content" id="history-content">
-                Select a date and time to view history.
-            </div>
-        </div>
+
+<header>
+  <div class="logo">IOT<span>/</span>SENTINEL &mdash; <span>ANOMALY DETECTION SYS</span></div>
+  <div class="status-bar">
+    <div class="status-dot" id="conn-dot"></div>
+    <span id="conn-label" style="color:var(--ok)">LIVE</span>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<div id="error-banner">⚠ Cannot reach backend — retrying…</div>
+
+<main>
+
+  <!-- Gauges -->
+  <div class="gauges">
+    <div class="gauge-card" id="card-temp">
+      <div class="gauge-label">// temperature</div>
+      <div>
+        <span class="gauge-value" id="val-temp">--.-</span>
+        <span class="gauge-unit">°C</span>
+      </div>
+      <div class="gauge-status" id="st-temp">● NOMINAL</div>
     </div>
-    
-    <script src="script.js"></script>
+    <div class="gauge-card" id="card-hum">
+      <div class="gauge-label">// humidity</div>
+      <div>
+        <span class="gauge-value" id="val-hum">--.-</span>
+        <span class="gauge-unit">%</span>
+      </div>
+      <div class="gauge-status" id="st-hum">● NOMINAL</div>
+    </div>
+    <div class="gauge-card" id="card-co2">
+      <div class="gauge-label">// co₂ level</div>
+      <div>
+        <span class="gauge-value" id="val-co2">----</span>
+        <span class="gauge-unit">ppm</span>
+      </div>
+      <div class="gauge-status" id="st-co2">● NOMINAL</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts">
+    <div class="chart-card chart-full">
+      <div class="chart-title">// sensor history &mdash; last 5 minutes</div>
+      <div class="chart-wrap">
+        <canvas id="chart-history"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <div class="alerts-panel">
+    <div class="panel-header">
+      <div class="panel-title">// anomaly log</div>
+      <div class="alert-count" id="alert-count">0</div>
+    </div>
+    <div class="alerts-list" id="alerts-list">
+      <div class="no-alerts">NO ANOMALIES DETECTED</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── Clock ─────────────────────────────────────────────────────────────────────
+const clockEl = document.getElementById('clock');
+setInterval(() => {
+  clockEl.textContent = new Date().toLocaleTimeString('en-GB');
+}, 1000);
+
+// ── Chart setup ───────────────────────────────────────────────────────────────
+const MAX_POINTS = 60;
+
+const chartCtx = document.getElementById('chart-history').getContext('2d');
+Chart.defaults.color = '#3a5068';
+Chart.defaults.font.family = "'Share Tech Mono', monospace";
+Chart.defaults.font.size = 10;
+
+const makeDataset = (label, color) => ({
+  label,
+  data: [],
+  borderColor: color,
+  backgroundColor: color + '18',
+  borderWidth: 1.5,
+  pointRadius: 0,
+  tension: 0.3,
+  fill: false,
+});
+
+const histChart = new Chart(chartCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      makeDataset('TEMP (°C)',  '#00e5ff'),
+      makeDataset('HUM (%)',    '#00ff88'),
+      makeDataset('CO₂ (ppm)', '#ff9500'),
+    ],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: { boxWidth: 12, padding: 20, color: '#3a5068' }
+      },
+      tooltip: {
+        backgroundColor: '#0d1520',
+        borderColor: '#1a2a3a',
+        borderWidth: 1,
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: '#0d1a26' },
+        ticks: { maxTicksLimit: 8 }
+      },
+      y: {
+        grid: { color: '#0d1a26' },
+      }
+    }
+  }
+});
+
+function pushHistory(rows) {
+  if (!rows || !rows.length) return;
+  const labels = rows.map(r => new Date(r.time).toLocaleTimeString('en-GB'));
+  const temps  = rows.map(r => r.temperature);
+  const hums   = rows.map(r => r.humidity);
+  const co2s   = rows.map(r => r.co2);
+
+  histChart.data.labels           = labels;
+  histChart.data.datasets[0].data = temps;
+  histChart.data.datasets[1].data = hums;
+  histChart.data.datasets[2].data = co2s;
+  histChart.update('none');
+}
+
+// ── Gauge update ──────────────────────────────────────────────────────────────
+const anomalyFields = new Set();
+
+function updateGauge(field, value, isAnomaly) {
+  const card = document.getElementById(`card-${field}`);
+  const val  = document.getElementById(`val-${field}`);
+  const st   = document.getElementById(`st-${field}`);
+
+  if (value !== undefined && value !== null) {
+    val.textContent = parseFloat(value).toFixed(field === 'co2' ? 0 : 1);
+  }
+
+  if (isAnomaly) {
+    anomalyFields.add(field);
+    card.classList.add('anomaly');
+    st.textContent = '⚠ ANOMALY';
+  } else {
+    anomalyFields.delete(field);
+    card.classList.remove('anomaly');
+    st.textContent = '● NOMINAL';
+  }
+}
+
+// ── Anomaly alerts ────────────────────────────────────────────────────────────
+const alertsList  = document.getElementById('alerts-list');
+const alertCountEl = document.getElementById('alert-count');
+let totalAlerts = 0;
+
+function renderAnomaly(a) {
+  const div = document.createElement('div');
+  div.className = 'alert-item';
+  const t = new Date(a.timestamp).toLocaleTimeString('en-GB');
+  div.innerHTML = `
+    <span class="alert-time">${t}</span>
+    <span class="alert-field">ANOMALY</span>
+    <span class="alert-val">T:${parseFloat(a.temperature).toFixed(1)}° H:${parseFloat(a.humidity).toFixed(1)}% CO₂:${parseFloat(a.co2).toFixed(0)}</span>
+    <span class="alert-z">score: <span>${a.anomaly_score}</span></span>
+  `;
+  return div;
+}
+
+function showAnomalies(anomalies) {
+  if (!anomalies || !anomalies.length) return;
+
+  // Remove placeholder
+  const placeholder = alertsList.querySelector('.no-alerts');
+  if (placeholder) placeholder.remove();
+
+  anomalies.forEach(a => {
+    alertsList.insertBefore(renderAnomaly(a), alertsList.firstChild);
+    totalAlerts++;
+  });
+
+  alertCountEl.textContent = totalAlerts;
+
+  // Keep list from growing forever
+  while (alertsList.children.length > 50) {
+    alertsList.removeChild(alertsList.lastChild);
+  }
+}
+
+// ── Connection state ──────────────────────────────────────────────────────────
+const dot    = document.getElementById('conn-dot');
+const label  = document.getElementById('conn-label');
+const banner = document.getElementById('error-banner');
+
+function setConnected(ok) {
+  dot.className   = 'status-dot' + (ok ? '' : ' offline');
+  label.textContent = ok ? 'LIVE' : 'OFFLINE';
+  label.style.color = ok ? 'var(--ok)' : 'var(--warn)';
+  banner.style.display = ok ? 'none' : 'block';
+}
+
+// ── SSE stream ────────────────────────────────────────────────────────────────
+function connectStream() {
+  const es = new EventSource('/api/stream');
+
+  es.onopen = () => setConnected(true);
+
+  es.onmessage = (e) => {
+    try {
+      const payload = JSON.parse(e.data);
+      if (payload.error) return;
+
+      const { latest, anomalies } = payload;
+
+      // Reset all gauges to nominal first
+      ['temp', 'hum', 'co2'].forEach(f => {
+        const card = document.getElementById(`card-${f}`);
+        if (card && !anomalyFields.has(f)) card.classList.remove('anomaly');
+      });
+
+      // Update gauge values
+      const fieldMap = { temp: 'temperature', hum: 'humidity', co2: 'co2' };
+      const activeAnomalyFields = new Set((anomalies || []).map(a => a.field));
+
+      for (const [short, full] of Object.entries(fieldMap)) {
+        updateGauge(short, latest[full], activeAnomalyFields.has(full));
+      }
+
+      // Show new anomalies
+      if (anomalies && anomalies.length) showAnomalies(anomalies);
+
+    } catch (err) { console.error('Parse error', err); }
+  };
+
+  es.onerror = () => {
+    setConnected(false);
+    es.close();
+    setTimeout(connectStream, 5000);   // reconnect after 5 s
+  };
+}
+
+// ── Poll history every 10 s ───────────────────────────────────────────────────
+async function fetchHistory() {
+  try {
+    const res  = await fetch('/api/history');
+    const rows = await res.json();
+    pushHistory(rows);
+  } catch { /* silent */ }
+}
+
+fetchHistory();
+setInterval(fetchHistory, 10_000);
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+connectStream();
+</script>
 </body>
 </html>

@@ -1,26 +1,28 @@
-const express = require("express");
-const axios = require("axios");
-const cors = require("cors");
+const axios = require('axios');
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const ML_URL = 'http://localhost:5000';
 
-// Test route
-app.get("/", (req, res) => {
-    res.send("Backend is running");
-});
+// Shared axios instance with timeout
+const http = axios.create({ baseURL: ML_URL, timeout: 5000 });
 
-// Route to call ML service
-app.get("/predict", async (req, res) => {
-    try {
-        const response = await axios.get("http://127.0.0.1:8000/predict"); 
-        res.json(response.data);
-    } catch (error) {
-        res.status(500).json({ error: "ML service not reachable" });
-    }
-});
+const getLatest = async () => {
+  const { data } = await http.get('/latest');
+  return data;
+};
 
-app.listen(6000, () => {
-    console.log("Backend running on http://127.0.0.1:6000");
-});
+const getHistory = async () => {
+  const { data } = await http.get('/history');
+  return data;
+};
+
+const detectAnomalies = async () => {
+  const { data } = await http.get('/detect');
+  return data;
+};
+
+const getAnomalyHistory = async () => {
+  const { data } = await http.get('/anomaly-history');
+  return data;
+};
+
+module.exports = { getLatest, getHistory, detectAnomalies, getAnomalyHistory };

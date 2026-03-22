@@ -8,7 +8,10 @@ const DashboardController = {
         alertBox: null,
         historyContent: null,
         datetimePicker: null,
-        fetchButton: null
+        fetchButton: null,
+        alertModal: null,
+        modalText: null,
+        modalClose: null
     },
 
     // Initialize the dashboard
@@ -16,6 +19,7 @@ const DashboardController = {
         this.cacheElements();
         this.bindEvents();
         this.setDefaultDateTime();
+        this.startLiveSimulation();
     },
 
     // Cache DOM elements
@@ -27,6 +31,9 @@ const DashboardController = {
         this.elements.historyContent = document.getElementById('history-content');
         this.elements.datetimePicker = document.getElementById('datetime-picker');
         this.elements.fetchButton = document.getElementById('fetch-history-btn');
+        this.elements.alertModal = document.getElementById('alert-modal');
+        this.elements.modalText = document.getElementById('modal-text');
+        this.elements.modalClose = document.getElementById('modal-close');
     },
 
     // Bind event listeners
@@ -45,6 +52,11 @@ const DashboardController = {
             if (e.key === 'Enter') {
                 this.elements.fetchButton.click();
             }
+        });
+
+        // Close modal
+        this.elements.modalClose.addEventListener('click', () => {
+            this.hideModal();
         });
     },
 
@@ -67,185 +79,92 @@ const DashboardController = {
     // Show message in history content
     showHistoryMessage(message) {
         this.elements.historyContent.textContent = message;
+    },
+
+    // Show modal with message
+    showModal(message) {
+        this.elements.modalText.textContent = message;
+        this.elements.alertModal.classList.add('show');
+    },
+
+    hideModal() {
+        this.elements.alertModal.classList.remove('show');
+    },
+
+    // Simulate live sensor readings
+    startLiveSimulation() {
+        setInterval(() => {
+            const temp = 20 + Math.floor(Math.random() * 20);   // 20–40°C
+            const co2 = 600 + Math.floor(Math.random() * 800);  // 600–1400 ppm
+            const hum = 25 + Math.floor(Math.random() * 60);    // 25–85%
+            updateValues(temp, co2, hum);
+        }, 4000);
     }
 };
 
 /**
  * Updates the dashboard values with real-time data
- * @param {number} temp - Temperature in Celsius
- * @param {number} co2 - CO2 level in ppm
- * @param {number} hum - Humidity percentage
  */
 function updateValues(temp, co2, hum) {
-    // Validate inputs
-    if (temp === null || temp === undefined) {
-        DashboardController.updateDisplay(
-            DashboardController.elements.tempValue, 
-            'No data'
-        );
-    } else {
-        DashboardController.updateDisplay(
-            DashboardController.elements.tempValue, 
-            `${temp}°C`
-        );
-    }
-
-    if (co2 === null || co2 === undefined) {
-        DashboardController.updateDisplay(
-            DashboardController.elements.co2Value, 
-            'No data'
-        );
-    } else {
-        DashboardController.updateDisplay(
-            DashboardController.elements.co2Value, 
-            `${co2} ppm`
-        );
-    }
-
-    if (hum === null || hum === undefined) {
-        DashboardController.updateDisplay(
-            DashboardController.elements.humidityValue, 
-            'No data'
-        );
-    } else {
-        DashboardController.updateDisplay(
-            DashboardController.elements.humidityValue, 
-            `${hum}%`
-        );
-    }
-
-    // Check for anomalies
+    DashboardController.updateDisplay(DashboardController.elements.tempValue, `${temp}°C`);
+    DashboardController.updateDisplay(DashboardController.elements.co2Value, `${co2} ppm`);
+    DashboardController.updateDisplay(DashboardController.elements.humidityValue, `${hum}%`);
     checkForAnomalies(temp, co2, hum);
 }
 
 /**
  * Checks for anomalies in the sensor data and triggers alerts
- * @param {number} temp - Temperature in Celsius
- * @param {number} co2 - CO2 level in ppm
- * @param {number} hum - Humidity percentage
  */
 function checkForAnomalies(temp, co2, hum) {
-    let hasAnomaly = false;
+    let alertMessage = [];
 
-    // Define threshold values
-    const thresholds = {
-        temp: { min: 15, max: 30 },
-        co2: { max: 1000 },
-        humidity: { min: 30, max: 70 }
-    };
+    if (temp < 15 || temp > 30) alertMessage.push(`Temperature anomaly: ${temp}°C`);
+    if (co2 > 1000) alertMessage.push(`High CO₂ detected: ${co2} ppm`);
+    if (hum < 30 || hum > 70) alertMessage.push(`Humidity out of range: ${hum}%`);
 
-    // Check temperature
-    if (temp !== null && temp !== undefined) {
-        if (temp < thresholds.temp.min || temp > thresholds.temp.max) {
-            hasAnomaly = true;
-        }
-    }
-
-    // Check CO2
-    if (co2 !== null && co2 !== undefined) {
-        if (co2 > thresholds.co2.max) {
-            hasAnomaly = true;
-        }
-    }
-
-    // Check humidity
-    if (hum !== null && hum !== undefined) {
-        if (hum < thresholds.humidity.min || hum > thresholds.humidity.max) {
-            hasAnomaly = true;
-        }
-    }
-
-    // Show or hide alert box
-    if (hasAnomaly) {
-        showAlert();
+    if (alertMessage.length > 0) {
+        DashboardController.elements.alertBox.classList.add('active');
+        DashboardController.elements.alertBox.querySelector('.alert-text').textContent = alertMessage.join(' | ');
+        DashboardController.showModal(alertMessage.join('\n'));
     } else {
-        hideAlert();
+        DashboardController.elements.alertBox.classList.remove('active');
+        DashboardController.elements.alertBox.querySelector('.alert-text').textContent = 'Environment Normal';
     }
 }
 
 /**
- * Shows the alert box
- */
-function showAlert() {
-    DashboardController.elements.alertBox.classList.add('active');
-}
-
-/**
- * Hides the alert box
- */
-function hideAlert() {
-    DashboardController.elements.alertBox.classList.remove('active');
-}
-
-/**
- * Fetches historical data for the specified date and time
- * @param {string} dateTime - The selected date and time in ISO format
+ * Fetches random historical data (simulated)
  */
 function fetchHistory(dateTime) {
-    // Log the request to console (placeholder for API call)
-    console.log(`Fetching history for: ${dateTime}`);
-    
-    // Format the datetime for display
     const formattedDate = new Date(dateTime).toLocaleString();
-    
-    // Update the history content to show loading state
-    DashboardController.showHistoryMessage(`Loading data for ${formattedDate}...`);
-    
-    // Simulate API call delay
+    DashboardController.showHistoryMessage(`Fetching data for ${formattedDate}...`);
+
     setTimeout(() => {
-        // This is where the actual API call would be made
-        // For now, just update the display
-        DashboardController.showHistoryMessage(
-            `History data for ${formattedDate} will be displayed here once connected to backend.`
-        );
-    }, 500);
-    
-    // Placeholder for future API integration
-    // Example of what the actual implementation might look like:
-    /*
-    fetch(`/api/history?datetime=${dateTime}`)
-        .then(response => response.json())
-        .then(data => {
-            displayHistoryData(data);
-        })
-        .catch(error => {
-            console.error('Error fetching history:', error);
-            DashboardController.showHistoryMessage('Error loading history data.');
-        });
-    */
+        const data = {
+            temperature: 18 + Math.floor(Math.random() * 15),
+            co2: 700 + Math.floor(Math.random() * 500),
+            humidity: 35 + Math.floor(Math.random() * 40),
+            timestamp: dateTime
+        };
+
+        displayHistoryData(data);
+    }, 1000);
 }
 
 /**
  * Displays historical data in the history box
- * @param {Object} data - Historical data from the API
  */
 function displayHistoryData(data) {
-    // This function will be implemented when backend is connected
-    // It will format and display the historical data
-    if (data && data.temperature !== undefined && data.co2 !== undefined && data.humidity !== undefined) {
-        const content = `
-            <div style="display: grid; gap: 1rem;">
-                <div><strong>Temperature:</strong> ${data.temperature}°C</div>
-                <div><strong>CO₂:</strong> ${data.co2} ppm</div>
-                <div><strong>Humidity:</strong> ${data.humidity}%</div>
-                <div><strong>Timestamp:</strong> ${new Date(data.timestamp).toLocaleString()}</div>
-            </div>
-        `;
-        DashboardController.elements.historyContent.innerHTML = content;
-    } else {
-        DashboardController.showHistoryMessage('No data available for the selected time.');
-    }
+    const content = `
+        <div style="display: grid; gap: 0.8rem;">
+            <div><strong>Temperature:</strong> ${data.temperature}°C</div>
+            <div><strong>CO₂:</strong> ${data.co2} ppm</div>
+            <div><strong>Humidity:</strong> ${data.humidity}%</div>
+            <div><strong>Timestamp:</strong> ${new Date(data.timestamp).toLocaleString()}</div>
+        </div>
+    `;
+    DashboardController.elements.historyContent.innerHTML = content;
 }
 
-// Initialize dashboard when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    DashboardController.init();
-    
-    // Example: Test the updateValues function after 2 seconds
-    // Remove this in production
-    /*
-    setTimeout(() => {
-        updateValues(22.5, 450, 55);
-    }, 2000);
-    */
-});
+// Initialize dashboard
+document.addEventListener('DOMContentLoaded', () => DashboardController.init());
