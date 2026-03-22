@@ -1,24 +1,23 @@
-import paho.mqtt.client as mqtt
-import json
-import csv
 import os
+import csv
+import json
+import paho.mqtt.client as mqtt
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-# ─── InfluxDB config ───────────────────────────────────────────────────────────
-INFLUX_URL    = "http://localhost:8086"
-INFLUX_TOKEN  = "ayUawvpInUeNmrvpZ9tCdyftTpfYUQCnkHuPdSLtY0Y9BDqP-1xp_v4rEhqXU5FRRFUVsELlJCBXJhD5zDCR7Q=="
-INFLUX_ORG   = "IOT_PROJECT"
-INFLUX_BUCKET = "iot_sensors"
+load_dotenv()
 
-# ─── MQTT config ───────────────────────────────────────────────────────────────
-BROKER = "localhost"
-PORT   = 1883
-TOPIC  = "iot/sensor"
-
-# ─── CSV config ────────────────────────────────────────────────────────────────
-CSV_FILE = CSV_FILE = r"C:\Users\kunal\IOT-ML\simulator\sensor_data.csv"
+# ─── Config ────────────────────────────────────────────────────────────────────
+INFLUX_URL    = os.getenv("INFLUX_URL",    "http://localhost:8086")
+INFLUX_TOKEN  = os.getenv("INFLUX_TOKEN",  "")
+INFLUX_ORG    = os.getenv("INFLUX_ORG",    "")
+INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "iot_sensors")
+BROKER        = "localhost"
+PORT          = 1883
+TOPIC         = "iot/sensor"
+CSV_FILE      = r"C:\Users\kunal\IOT-ML\simulator\sensor_data.csv"
 
 # ─── Init InfluxDB ─────────────────────────────────────────────────────────────
 influx_client = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
@@ -30,8 +29,8 @@ if not os.path.exists(CSV_FILE):
         csv.writer(f).writerow(["timestamp", "temperature", "humidity", "co2"])
 
 
-def on_connect(client, userdata, flags, rc):
-    print(f"[MQTT] Connected (rc={rc})")
+def on_connect(client, userdata, flags, reason_code, properties):
+    print(f"[MQTT] Connected (rc={reason_code})")
     client.subscribe(TOPIC)
 
 
@@ -39,18 +38,17 @@ def on_message(client, userdata, msg):
     try:
         data      = json.loads(msg.payload.decode())
         timestamp = datetime.now(timezone.utc)
-
-        temp     = data["temperature"]
-        humidity = data["humidity"]
-        co2      = data["co2"]
+        temp      = data["temperature"]
+        humidity  = data["humidity"]
+        co2       = data["co2"]
 
         print(f"[DATA] {timestamp.strftime('%H:%M:%S')} | "
               f"Temp: {temp}°C  Humidity: {humidity}%  CO₂: {co2} ppm")
-
     except Exception as e:
         print(f"[ERROR] Failed to parse message: {e}")
         return
-    # ── Write to CSV (separate try so it always runs) ──────────────────────
+
+    # ── Write to CSV ────────────────────────────────────────────────────────────
     try:
         with open(CSV_FILE, mode='a', newline='') as f:
             writer = csv.writer(f)
@@ -59,7 +57,7 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print(f"[ERROR] CSV write failed: {e}")
 
-    # ── Write to InfluxDB ───────────────────────────────────────────────────
+    # ── Write to InfluxDB ───────────────────────────────────────────────────────
     try:
         point = (
             Point("sensor_readings")
@@ -72,8 +70,8 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print(f"[ERROR] InfluxDB write failed: {e}")
 
-# ─── Start MQTT client ─────────────────────────────────────────────────────────
-client = mqtt.Client()
+
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
 client.on_message = on_message
 client.connect(BROKER, PORT, 60)
