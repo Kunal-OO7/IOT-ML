@@ -120,7 +120,7 @@ def load_model_from_disk():
 def train_model():
     global model, scaler, last_trained, sample_count
     print("[MODEL] Fetching training data from InfluxDB...")
-    data = fetch_training_data(window_minutes=60)
+    data = fetch_training_data(window_minutes=9999)
 
     if len(data) < MIN_SAMPLES:
         print(f"[MODEL] Not enough data yet ({len(data)}/{MIN_SAMPLES} samples). Waiting...")
