@@ -40,7 +40,6 @@ sim.py ──MQTT──► subscriber.py ──► InfluxDB
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
 | Sensor Simulation | Python, paho-mqtt |
 | Message Broker | Mosquitto (MQTT) |
 | Time-Series DB | InfluxDB 2.7 |
